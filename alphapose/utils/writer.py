@@ -13,7 +13,7 @@ from alphapose.utils.pPose_nms import pose_nms, write_json
 
 DEFAULT_VIDEO_SAVE_OPT = {
     'savepath': 'examples/res/1.mp4',
-    'fourcc': cv2.VideoWriter_fourcc(*'mp4v'),
+    'fourcc': cv2.VideoWriter_fourcc(*'mp4v'),  # Keep mp4v as default, fallback will handle issues
     'fps': 25,
     'frameSize': (640, 480)
 }
@@ -83,15 +83,37 @@ class DataWriter():
         hm_size = self.cfg.DATA_PRESET.HEATMAP_SIZE
         if self.save_video:
             # initialize the file video stream, adapt ouput video resolution to original video
+            original_savepath = self.video_save_opt['savepath']
+            print(f"Initializing video writer for: {original_savepath}")
+            print(f"Video parameters: fps={self.video_save_opt['fps']}, size={self.video_save_opt['frameSize']}")
+            
             stream = cv2.VideoWriter(*[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
             if not stream.isOpened():
-                print("Try to use other video encoders...")
+                print("Initial video encoder failed. Trying alternative encoders...")
                 ext = self.video_save_opt['savepath'].split('.')[-1]
                 fourcc, _ext = self.recognize_video_ext(ext)
+                
+                # Update both fourcc and path if extension changed
                 self.video_save_opt['fourcc'] = fourcc
-                self.video_save_opt['savepath'] = self.video_save_opt['savepath'][:-4] + _ext
+                new_savepath = original_savepath.rsplit('.', 1)[0] + _ext
+                self.video_save_opt['savepath'] = new_savepath
+                
+                print(f"Retrying with new codec and path: {new_savepath}")
                 stream = cv2.VideoWriter(*[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
-            assert stream.isOpened(), 'Cannot open video for writing'
+                
+            if not stream.isOpened():
+                error_msg = (
+                    f"Cannot open video for writing. Tried path: {self.video_save_opt['savepath']}\n"
+                    f"Video parameters: fps={self.video_save_opt['fps']}, size={self.video_save_opt['frameSize']}, "
+                    f"fourcc={self.video_save_opt['fourcc']}\n"
+                    "Please check if:\n"
+                    "1. Output directory exists and is writable\n"
+                    "2. FFmpeg is properly installed with codec support\n"
+                    "3. Disk space is available"
+                )
+                raise RuntimeError(error_msg)
+            else:
+                print(f"Video writer successfully initialized: {self.video_save_opt['savepath']}")
         # keep looping infinitelyd
         while True:
             # ensure the queue is not empty and get item
@@ -228,12 +250,51 @@ class DataWriter():
         return self.final_result
 
     def recognize_video_ext(self, ext=''):
-        if ext == 'mp4':
-            return cv2.VideoWriter_fourcc(*'mp4v'), '.' + ext
-        elif ext == 'avi':
-            return cv2.VideoWriter_fourcc(*'XVID'), '.' + ext
-        elif ext == 'mov':
-            return cv2.VideoWriter_fourcc(*'XVID'), '.' + ext
-        else:
-            print("Unknow video format {}, will use .mp4 instead of it".format(ext))
-            return cv2.VideoWriter_fourcc(*'mp4v'), '.mp4'
+        """
+        Recognize video extension and return appropriate codec with fallback options.
+        Returns (fourcc, extension) tuple.
+        """
+        # Define codec priority list for each format
+        codec_fallbacks = {
+            'mp4': [
+                (cv2.VideoWriter_fourcc(*'mp4v'), '.mp4'),
+                (cv2.VideoWriter_fourcc(*'XVID'), '.avi'),
+                (cv2.VideoWriter_fourcc(*'MJPG'), '.avi'),
+            ],
+            'avi': [
+                (cv2.VideoWriter_fourcc(*'XVID'), '.avi'),
+                (cv2.VideoWriter_fourcc(*'MJPG'), '.avi'),
+                (cv2.VideoWriter_fourcc(*'mp4v'), '.mp4'),
+            ],
+            'mov': [
+                (cv2.VideoWriter_fourcc(*'mp4v'), '.mov'),
+                (cv2.VideoWriter_fourcc(*'XVID'), '.avi'),
+                (cv2.VideoWriter_fourcc(*'MJPG'), '.avi'),
+            ]
+        }
+        
+        # Get fallback list for the extension, default to mp4 fallbacks
+        fallbacks = codec_fallbacks.get(ext, codec_fallbacks['mp4'])
+        
+        # Try each codec until one works
+        for fourcc, file_ext in fallbacks:
+            # Test if this codec works by trying to create a VideoWriter
+            test_path = '/tmp/test_codec' + file_ext
+            try:
+                test_writer = cv2.VideoWriter(test_path, fourcc, 25.0, (640, 480))
+                if test_writer.isOpened():
+                    test_writer.release()
+                    # Remove test file if it exists
+                    import os
+                    if os.path.exists(test_path):
+                        os.remove(test_path)
+                    print(f"Using codec: {fourcc} with extension: {file_ext}")
+                    return fourcc, file_ext
+                test_writer.release()
+            except Exception as e:
+                print(f"Codec test failed for {fourcc}: {e}")
+                continue
+        
+        # If all else fails, use the basic mp4v codec
+        print(f"All codec tests failed for format {ext}, falling back to basic mp4v")
+        return cv2.VideoWriter_fourcc(*'mp4v'), '.mp4'

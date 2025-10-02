@@ -55,9 +55,9 @@ parser.add_argument('--format', type=str,
                     help='save in the format of cmu or coco or openpose, option: coco/cmu/open')
 parser.add_argument('--min_box_area', type=int, default=0,
                     help='min box area to filter out')
-parser.add_argument('--detbatch', type=int, default=5,
+parser.add_argument('--detbatch', type=int, default=4,
                     help='detection batch size PER GPU')
-parser.add_argument('--posebatch', type=int, default=64,
+parser.add_argument('--posebatch', type=int, default=1,
                     help='pose estimation maximum batch size PER GPU')
 parser.add_argument('--eval', dest='eval', default=False, action='store_true',
                     help='save the result json as coco format, using image index(int) instead of image name(str)')
@@ -165,6 +165,32 @@ if __name__ == "__main__":
     if not os.path.exists(args.outputpath):
         os.makedirs(args.outputpath)
 
+    # GPU Memory management for RTX 4050 and similar GPUs
+    if torch.cuda.is_available():
+        # Aggressive memory clearing for RTX 4050
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        
+        # Get GPU memory info
+        gpu_memory_gb = torch.cuda.get_device_properties(args.device).total_memory / 1024**3
+        print(f"GPU: {torch.cuda.get_device_name(args.device)}")
+        print(f"Total GPU Memory: {gpu_memory_gb:.2f} GB")
+        
+        # Reduce queue size for memory-constrained GPUs
+        if gpu_memory_gb <= 6:
+            args.qsize = min(args.qsize, 256)  # Reduce queue size to save memory
+            print(f"Reduced queue size to {args.qsize} for memory optimization")
+        
+        # Auto-adjust batch sizes based on GPU memory
+        if gpu_memory_gb <= 6:  # For 6GB GPUs like RTX 4050
+            # Conservative settings for RTX 4050 to avoid OOM
+            if args.posebatch > 1:
+                print(f"Adjusting pose batch size from {args.posebatch} to 1 for single-person videos")
+                args.posebatch = 1
+            if args.detbatch > 4:
+                print(f"Adjusting detection batch size from {args.detbatch} to 4 for RTX 4050 (conservative)")
+                args.detbatch = 4
+
     # Load detection loader
     if mode == 'webcam':
         det_loader = WebCamDetectionLoader(input_source, get_detector(args), cfg, args)
@@ -258,6 +284,14 @@ if __name__ == "__main__":
                     boxes,scores,ids,hm,cropped_boxes = track(tracker,args,orig_img,inps,boxes,hm,cropped_boxes,im_name,scores)
                 hm = hm.cpu()
                 writer.save(boxes, scores, ids, hm, cropped_boxes, orig_img, im_name)
+                
+                # Clear GPU cache more frequently for memory-constrained GPUs
+                if torch.cuda.is_available():
+                    # Clear every frame for RTX 4050, every 5 frames for larger GPUs
+                    gpu_memory_gb = torch.cuda.get_device_properties(args.device).total_memory / 1024**3
+                    clear_interval = 1 if gpu_memory_gb <= 6 else 5
+                    if i % clear_interval == 0:
+                        torch.cuda.empty_cache()
                 if args.profile:
                     ckpt_time, post_time = getTime(ckpt_time)
                     runtime_profile['pn'].append(post_time)

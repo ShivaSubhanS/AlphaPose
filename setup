@@ -1,0 +1,22 @@
+alphapose setup
+git clone https://github.com/MVIG-SJTU/AlphaPose.git
+cd AlphaPose
+install cuda and nvcc and corresponding torch
+pip3 install cython natsort easydict pycocotools
+mv scripts/demo_inference.py .
+sudo ln -s /usr/bin/python3 /usr/bin/python (if needed)
+sudo apt install gcc-10 g++-10
+sudo apt-get install libyaml-dev
+sudo apt-get install python3-tk -y
+CXX=g++-10 CC=gcc-10 python setup.py build_ext --inplace
+download fastpose model and yolo model
+
+python3 demo_inference.py \
+    --cfg configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml \
+    --checkpoint pretrained_models/fast_res50_256x192.pth \
+    --indir examples/demo \
+    --outdir results \
+    --save_img \
+    --gpu 0
+
+python3 demo_inference.py --cfg configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml --checkpoint pretrained_models/fast_res50_256x192.pth --video smallgirl.mp4 --outdir results_video --detbatch=4 --gpu 0
