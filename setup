@@ -2,7 +2,7 @@ alphapose setup
 git clone https://github.com/MVIG-SJTU/AlphaPose.git
 cd AlphaPose
 install cuda and nvcc and corresponding torch
-pip3 install cython natsort easydict pycocotools
+pip3 install cython natsort easydict pycocotools numpy==1.26.4
 mv scripts/demo_inference.py .
 sudo ln -s /usr/bin/python3 /usr/bin/python (if needed)
 sudo apt install gcc-10 g++-10
