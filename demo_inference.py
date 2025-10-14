@@ -78,6 +78,8 @@ parser.add_argument('--save_video', dest='save_video',
                     help='whether to save rendered video', default=False, action='store_true')
 parser.add_argument('--vis_fast', dest='vis_fast',
                     help='use fast rendering', action='store_true', default=False)
+parser.add_argument('--skip_frames', type=int, default=5,
+                    help='process pose estimation every N frames (e.g., 10 = process every 10th frame). Default is 1 (process all frames)')
 """----------------------------- Tracking options -----------------------------"""
 parser.add_argument('--pose_flow', dest='pose_flow',
                     help='track humans in video with PoseFlow', action='store_true', default=False)
@@ -246,6 +248,11 @@ if __name__ == "__main__":
     batchSize = args.posebatch
     if args.flip:
         batchSize = int(batchSize / 2)
+    
+    # Frame skipping configuration
+    frame_skip_interval = args.skip_frames
+    last_pose_result = None  # Store last pose result for skipped frames
+    
     try:
         for i in im_names_desc:
             start_time = getTime()
@@ -259,31 +266,48 @@ if __name__ == "__main__":
                 if args.profile:
                     ckpt_time, det_time = getTime(start_time)
                     runtime_profile['dt'].append(det_time)
-                # Pose Estimation
-                inps = inps.to(args.device)
-                datalen = inps.size(0)
-                leftover = 0
-                if (datalen) % batchSize:
-                    leftover = 1
-                num_batches = datalen // batchSize + leftover
-                hm = []
-                for j in range(num_batches):
-                    inps_j = inps[j * batchSize:min((j + 1) * batchSize, datalen)]
-                    if args.flip:
-                        inps_j = torch.cat((inps_j, flip(inps_j)))
-                    hm_j = pose_model(inps_j)
-                    if args.flip:
-                        hm_j_flip = flip_heatmap(hm_j[int(len(hm_j) / 2):], pose_dataset.joint_pairs, shift=True)
-                        hm_j = (hm_j[0:int(len(hm_j) / 2)] + hm_j_flip) / 2
-                    hm.append(hm_j)
-                hm = torch.cat(hm)
-                if args.profile:
-                    ckpt_time, pose_time = getTime(ckpt_time)
-                    runtime_profile['pt'].append(pose_time)
-                if args.pose_track:
-                    boxes,scores,ids,hm,cropped_boxes = track(tracker,args,orig_img,inps,boxes,hm,cropped_boxes,im_name,scores)
-                hm = hm.cpu()
-                writer.save(boxes, scores, ids, hm, cropped_boxes, orig_img, im_name)
+                
+                # Check if we should process pose estimation for this frame
+                should_process_pose = (i % frame_skip_interval == 0)
+                
+                if should_process_pose:
+                    # Pose Estimation
+                    inps = inps.to(args.device)
+                    datalen = inps.size(0)
+                    leftover = 0
+                    if (datalen) % batchSize:
+                        leftover = 1
+                    num_batches = datalen // batchSize + leftover
+                    hm = []
+                    for j in range(num_batches):
+                        inps_j = inps[j * batchSize:min((j + 1) * batchSize, datalen)]
+                        if args.flip:
+                            inps_j = torch.cat((inps_j, flip(inps_j)))
+                        hm_j = pose_model(inps_j)
+                        if args.flip:
+                            hm_j_flip = flip_heatmap(hm_j[int(len(hm_j) / 2):], pose_dataset.joint_pairs, shift=True)
+                            hm_j = (hm_j[0:int(len(hm_j) / 2)] + hm_j_flip) / 2
+                        hm.append(hm_j)
+                    hm = torch.cat(hm)
+                    if args.profile:
+                        ckpt_time, pose_time = getTime(ckpt_time)
+                        runtime_profile['pt'].append(pose_time)
+                    if args.pose_track:
+                        boxes,scores,ids,hm,cropped_boxes = track(tracker,args,orig_img,inps,boxes,hm,cropped_boxes,im_name,scores)
+                    hm = hm.cpu()
+                    
+                    # Store result for reuse in skipped frames
+                    last_pose_result = (boxes, scores, ids, hm, cropped_boxes)
+                    writer.save(boxes, scores, ids, hm, cropped_boxes, orig_img, im_name)
+                else:
+                    # Skip pose estimation, reuse last result or save without pose
+                    if last_pose_result is not None:
+                        # Reuse the last pose estimation result
+                        boxes, scores, ids, hm, cropped_boxes = last_pose_result
+                        writer.save(boxes, scores, ids, hm, cropped_boxes, orig_img, im_name)
+                    else:
+                        # No previous result available, save frame without pose
+                        writer.save(None, None, None, None, None, orig_img, im_name)
                 
                 # Clear GPU cache more frequently for memory-constrained GPUs
                 if torch.cuda.is_available():
