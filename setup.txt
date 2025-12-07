@@ -1,4 +1,3 @@
-alphapose setup
 git clone https://github.com/MVIG-SJTU/AlphaPose.git
 cd AlphaPose
 install cuda and nvcc and corresponding torch
@@ -10,6 +9,10 @@ sudo apt-get install libyaml-dev
 sudo apt-get install python3-tk -y
 CXX=g++-10 CC=gcc-10 python setup.py build_ext --inplace
 download fastpose model and yolo model
+	sss@pop-os:~/project/pose_3d/AlphaPose/detector/yolo/data$ ls
+	yolov3-spp.weights
+	sss@pop-os:~/project/pose_3d/AlphaPose/pretrained_models$ ls
+	fast_res50_256x192.pth  get_models.sh
 
 python3 demo_inference.py \
     --cfg configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml \
@@ -20,3 +23,10 @@ python3 demo_inference.py \
     --gpu 0
 
 python3 demo_inference.py --cfg configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml --checkpoint pretrained_models/fast_res50_256x192.pth --video smallgirl.mp4 --outdir results_video --detbatch=4 --gpu 0
+
+python3 lsp_evaluation.py \
+    --cfg configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml \
+    --checkpoint pretrained_models/fast_res50_256x192.pth \
+    --indir /home/sss/Downloads/archive/images \
+    --gt_file /home/sss/Downloads/archive/joints.mat 
+
