@@ -47,6 +47,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+
 # Translations
 *.mo
 *.pot
@@ -118,3 +119,7 @@ examples/res*/
 data/
 exp/
 data
+
+*.mp4
+lsp*
+chech.py

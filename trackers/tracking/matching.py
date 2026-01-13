@@ -9,8 +9,6 @@ if not hasattr(np, 'float'):
     np.float = np.float64
 if not hasattr(np, 'int'):
     np.int = np.int_
-if not hasattr(np, 'bool'):
-    np.bool = np.bool_
 
 from cython_bbox import bbox_overlaps as bbox_ious
 from trackers.utils import kalman_filter
