@@ -55,7 +55,7 @@ parser.add_argument('--format', type=str,
                     help='save in the format of cmu or coco or openpose, option: coco/cmu/open')
 parser.add_argument('--min_box_area', type=int, default=0,
                     help='min box area to filter out')
-parser.add_argument('--detbatch', type=int, default=4,
+parser.add_argument('--detbatch', type=int, default=16,
                     help='detection batch size PER GPU')
 parser.add_argument('--posebatch', type=int, default=1,
                     help='pose estimation maximum batch size PER GPU')
